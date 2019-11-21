@@ -1,0 +1,256 @@
+--Kyle Wyse & Nick Smith
+--6 December 2018
+
+DROP TRIGGER 	IF EXISTS 	PledgeUpdate ON pledge;
+DROP FUNCTION 	IF EXISTS 	pledge_update();
+
+DROP VIEW 	IF EXISTS  	annual_report;
+PROP VIEW 	IF EXISTS	mon_pledge_sum;
+DROP VIEW	IF EXISTS	mon_donation_sum;
+DROP VIEW 	IF EXISTS	monthly_report;
+DROP VIEW 	IF EXISTS	payments_due_report;
+DROP VIEW 	IF EXISTS	get_tot_pledges;
+DROP VIEW 	IF EXISTS	card_info;
+
+DROP TABLE 	IF EXISTS	donation;
+DROP TABLE 	IF EXISTS	pledge;
+DROP TABLE 	IF EXISTS	project;
+DROP TABLE 	IF EXISTS	person;
+DROP TABLE 	IF EXISTS	matching_corp;
+DROP TABLE 	IF EXISTS	csz;
+DROP TABLE 	IF EXISTS	class;
+
+DROP DOMAIN 	IF EXISTS	Category;
+
+--------------------------------DOMAINS--------------------------------
+
+CREATE DOMAIN Category CHAR(15) CHECK (VALUE IN(
+		'Presidents','Platinum','Professional',
+	        'Gold','Affiliate','Intermediate',
+		'Primary','Silver','Bronze','Standard'
+));
+
+--------------------------------TABLES---------------------------------
+
+CREATE TABLE class (
+	gradYear	CHAR(4)		UNIQUE NOT NULL,
+	contribution	DEC(14,2),
+	PRIMARY KEY 	(gradYear)
+);
+
+CREATE TABLE csz (
+	zip 		CHAR(16) 	UNIQUE NOT NULL,
+	state 		CHAR(2) 	NOT NULL,
+	city 		VARCHAR(64) 	NOT NULL,
+	PRIMARY KEY 	(zip)
+);
+
+CREATE TABLE matching_corp (
+	corpName 	VARCHAR(255) 	UNIQUE NOT NULL,
+	address 	VARCHAR(255) 	NOT NULL,
+	percentMatch 	DEC(4,3),
+	percentLim 	DEC(10,2),
+	zip 		CHAR(16),
+	PRIMARY KEY 	(corpName),
+	FOREIGN KEY 	(zip) 		REFERENCES csz
+);
+
+CREATE TABLE person (
+	donorID 	SERIAL 		UNIQUE,
+	fName 		VARCHAR(255) 	NOT NULL,
+	lName 		VARCHAR(255) 	NOT NULL,
+	phone 		CHAR(10) 	NOT NULL,
+	address 	VARCHAR(255) 	NOT NULL,
+	gradYear 	CHAR(4),
+	category 	CATEGORY,
+	zip 		CHAR(16),
+	corpName 	VARCHAR(255),
+	PRIMARY KEY 	(donorID),
+	FOREIGN KEY 	(zip)		REFERENCES csz(zip)
+		ON DELETE SET NULL
+		ON UPDATE CASCADE,
+	FOREIGN KEY	(gradYear)	REFERENCES class(gradYear),
+	FOREIGN KEY 	(corpName) 	REFERENCES matching_corp(corpName)
+		ON DELETE SET NULL
+		ON UPDATE CASCADE
+);
+
+CREATE TABLE project (
+	projName 	VARCHAR(255) 	UNIQUE NOT NULL,
+	startDate 	DATE 		NOT NULL,
+	budget 		DEC(10,2) 	NOT NULL,
+	PRIMARY KEY	(projName)
+);
+
+CREATE TABLE pledge (
+	pledgeNo 	SERIAL 		UNIQUE,
+	datePledged 	DATE 		NOT NULL,
+	amountPledged 	DEC(10,2) 	NOT NULL,
+	numPayments 	DEC(3,0),
+	donorID 	INT,
+	projName 	VARCHAR(255),
+	PRIMARY KEY	(pledgeNo), 
+	FOREIGN KEY 	(donorID) 	REFERENCES person(donorID)
+		ON DELETE SET NULL
+		ON UPDATE CASCADE,
+	FOREIGN KEY 	(projName) 	REFERENCES project(projName)
+		ON DELETE SET NULL
+		ON UPDATE CASCADE
+);
+
+CREATE TABLE donation (
+	creditCardNo 	CHAR(16),
+	datePaid 	DATE 		UNIQUE NOT NULL,
+	checkNo 	CHAR(9),
+	amountPaid 	DEC(10,2) 	NOT NULL,
+	paymentMethod 	CHAR(64) 	NOT NULL,
+	pledgeNo 	INT,	
+	PRIMARY KEY	(datePaid),	
+	FOREIGN KEY 	(pledgeNo) 	REFERENCES pledge(pledgeNo)
+		ON DELETE SET NULL
+		ON UPDATE CASCADE	
+);
+
+--------------------------FUNCTIONS & TRIGGERS--------------------------
+
+CREATE FUNCTION pledge_update() RETURNS trigger AS $update_class_totals$
+	DECLARE 	
+		grdyr 	CHAR(4);
+		
+	BEGIN
+		--update class contribution totals
+
+		grdyr := (SELECT	gradYear
+			  FROM		person
+			  WHERE		person.donorID = NEW.donorID);
+
+		UPDATE 	public.class
+		SET 	contribution = (SELECT 	SUM(amountPledged)
+					FROM 	person, pledge
+					WHERE	person.donorID = pledge.donorID AND 
+						person.gradYear = grdyr)
+		WHERE 	class.gradYear = grdyr;
+		
+		--update categories in person class 
+		IF 	NEW.amountPledged >= 50000
+		 THEN	UPDATE 	person
+			SET 	category = 'Presidents'
+			FROM	pledge
+			WHERE	person.donorID = NEW.donorID AND
+				pledge.amountPledged >= 50000;
+
+		ELSIF	NEW.amountPledged >= 25000
+		 THEN	UPDATE 	person
+			SET 	category = 'Platinum'
+			FROM	pledge
+			WHERE	person.donorID = NEW.donorID AND
+				pledge.amountPledged BETWEEN 25000 AND 49999;
+
+		ELSIF	NEW.amountPledged >= 10000
+		 THEN	--Professional
+			UPDATE 	person
+			SET 	category = 'Professional'
+			FROM	pledge
+			WHERE	person.donorID = NEW.donorID AND
+				pledge.amountPledged BETWEEN 10000 AND 24999;
+
+		ELSIF	NEW.amountPledged >= 5000
+		 THEN	UPDATE 	person
+			SET 	category = 'Gold'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 5000 AND 9999;
+
+		ELSIF	NEW.amountPledged >= 2500
+		 THEN	UPDATE 	person
+			SET 	category = 'Affiliate'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 2500 AND 4999;
+			
+		ELSIF	NEW.amountPledged >= 1000
+		 THEN	UPDATE 	person
+			SET 	category = 'Intermediate'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 1000 AND 2499;
+			
+		ELSIF	NEW.amountPledged >= 750
+		 THEN	UPDATE 	person
+			SET 	category = 'Primary'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 750 AND 9999;
+			
+		ELSIF	NEW.amountPledged >= 500
+		 THEN	UPDATE 	person
+			SET 	category = 'Silver'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 500 AND 749;
+			
+		ELSIF	NEW.amountPledged >= 250
+		 THEN	UPDATE 	person
+			SET 	category = 'Bronze'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 250 AND 499;
+			
+		ELSIF	NEW.amountPledged >= 100
+		 THEN	UPDATE 	person
+			SET 	category = 'Standard'
+			FROM	pledge
+			WHERE	person.donorID = pledge.donorID AND
+				pledge.amountPledged BETWEEN 100 AND 249;
+			
+        	END IF;
+		
+		RETURN 	NULL;
+	END;
+$update_class_totals$ LANGUAGE plpgsql;
+
+CREATE TRIGGER PledgeUpdate
+	AFTER 	INSERT OR DELETE OR UPDATE
+	ON 	pledge
+	FOR EACH ROW EXECUTE PROCEDURE pledge_update();
+
+---------------------------------VIEWS---------------------------------
+
+CREATE 	VIEW get_tot_pledges (totalPledges) AS
+SELECT 	SUM(amountPledged)
+FROM	pledge;
+
+CREATE	VIEW card_info (fName, lName, zip, creditCardNo) AS
+SELECT	DISTINCT fName, lName, z.zip, creditCardNo
+FROM	person, csz z, pledge, donation
+WHERE 	person.donorID = pledge.donorId AND
+	pledge.pledgeNo = donation.pledgeNo;
+
+CREATE 	VIEW annual_report (fName, lName, amountPledged, totClassContribution, classParticipation) AS
+SELECT 	fName, lName, amountPledged, contribution, (contribution/totalPledges)
+FROM	person, pledge, class, get_tot_pledges
+WHERE 	person.donorId 	= pledge.donorId AND
+	person.gradYear = class.gradYear AND
+	datePledged > (CURRENT_DATE - '1 Year'::INTERVAL);
+
+
+CREATE 	VIEW mon_pledge_sum (pledgeSum) AS
+SELECT 	SUM(amountPledged)
+FROM	pledge
+WHERE	datePledged > (CURRENT_DATE - '1 Month'::INTERVAL);
+
+CREATE	VIEW mon_donation_sum (paidSum) AS
+SELECT	SUM(amountPaid)
+FROM	donation
+WHERE	datePaid > (CURRENT_DATE - '1 Month'::INTERVAL);
+
+CREATE 	VIEW monthly_report (pledges, donations, percentRecieved) AS
+SELECT	pledgeSum, paidSum, (pledgeSum/paidSum)
+FROM	mon_pledge_sum, mon_donation_sum;
+
+
+CREATE 	VIEW payments_due_report (fName, lName, address, city, state, zip, amountDue) AS
+SELECT	fName, lName, address, city, state, z.zip, (amountPledged - amountPaid)
+FROM 	person, csz z, pledge, donation
+WHERE	person.donorId 	= pledge.donorId AND
+	(amountPledged - amountPaid) > 0;

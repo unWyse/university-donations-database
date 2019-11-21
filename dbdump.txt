@@ -1,0 +1,165 @@
+Script started on December  6, 2018 01:20:41 PM UTC
+wysekx16@Solaris:~$ psql univdonations
+psql (9.6.1)
+Type "help" for help.
+
+univdonations=> \i dbcreate.txt
+DROP TRIGGER
+DROP FUNCTION
+DROP VIEW
+DROP VIEW
+DROP VIEW
+DROP VIEW
+DROP VIEW
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP TABLE
+DROP DOMAIN
+CREATE DOMAIN
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE FUNCTION
+CREATE TRIGGER
+CREATE VIEW
+CREATE VIEW
+CREATE VIEW
+CREATE VIEW
+CREATE VIEW
+univdonations=> \d
+                 List of relations
+ Schema |        Name         |   Type   |  Owner   
+--------+---------------------+----------+----------
+ public | annual_report       | view     | wysekx16
+ public | card_info           | view     | wysekx16
+ public | class               | table    | wysekx16
+ public | csz                 | table    | wysekx16
+ public | donation            | table    | wysekx16
+ public | get_tot_pledges     | view     | wysekx16
+ public | matching_corp       | table    | wysekx16
+ public | monthly_report      | view     | wysekx16
+ public | payments_due_report | view     | wysekx16
+ public | person              | table    | wysekx16
+ public | person_donorid_seq  | sequence | wysekx16
+ public | pledge              | table    | wysekx16
+ public | pledge_pledgeno_seq | sequence | wysekx16
+ public | project             | table    | wysekx16
+(14 rows)
+
+univdonations=> \d class
+           Table "public.class"
+    Column    |     Type      | Modifiers 
+--------------+---------------+-----------
+ gradyear     | character(4)  | not null
+ contribution | numeric(14,2) | 
+Indexes:
+    "class_pkey" PRIMARY KEY, btree (gradyear)
+Referenced by:
+    TABLE "person" CONSTRAINT "person_gradyear_fkey" FOREIGN KEY (gradyear) REFERENCES class(gradyear)
+
+univdonations=> \d csz
+             Table "public.csz"
+ Column |         Type          | Modifiers 
+--------+-----------------------+-----------
+ zip    | character(16)         | not null
+ state  | character(2)          | not null
+ city   | character varying(64) | not null
+Indexes:
+    "csz_pkey" PRIMARY KEY, btree (zip)
+Referenced by:
+    TABLE "matching_corp" CONSTRAINT "matching_corp_zip_fkey" FOREIGN KEY (zip) REFERENCES csz(zip)
+    TABLE "person" CONSTRAINT "person_zip_fkey" FOREIGN KEY (zip) REFERENCES csz(zip) ON UPDATE CASCADE ON DELETE SET NULL
+
+univdonations=> \d matching_corp
+           Table "public.matching_corp"
+    Column    |          Type          | Modifiers 
+--------------+------------------------+-----------
+ corpname     | character varying(255) | not null
+ address      | character varying(255) | not null
+ percentmatch | numeric(4,3)           | 
+ percentlim   | numeric(10,2)          | 
+ zip          | character(16)          | 
+Indexes:
+    "matching_corp_pkey" PRIMARY KEY, btree (corpname)
+Foreign-key constraints:
+    "matching_corp_zip_fkey" FOREIGN KEY (zip) REFERENCES csz(zip)
+Referenced by:
+    TABLE "person" CONSTRAINT "person_corpname_fkey" FOREIGN KEY (corpname) REFERENCES matching_corp(corpname) ON UPDATE CASCADE ON DELETE SET NULL
+
+univdonations=> \d person
+                                    Table "public.person"
+  Column  |          Type          |                        Modifiers                         
+----------+------------------------+----------------------------------------------------------
+ donorid  | integer                | not null default nextval('person_donorid_seq'::regclass)
+ fname    | character varying(255) | not null
+ lname    | character varying(255) | not null
+ phone    | character(10)          | not null
+ address  | character varying(255) | not null
+ gradyear | character(4)           | 
+ category | category               | 
+ zip      | character(16)          | 
+ corpname | character varying(255) | 
+Indexes:
+    "person_pkey" PRIMARY KEY, btree (donorid)
+Foreign-key constraints:
+    "person_corpname_fkey" FOREIGN KEY (corpname) REFERENCES matching_corp(corpname) ON UPDATE CASCADE ON DELETE SET NULL
+    "person_gradyear_fkey" FOREIGN KEY (gradyear) REFERENCES class(gradyear)
+    "person_zip_fkey" FOREIGN KEY (zip) REFERENCES csz(zip) ON UPDATE CASCADE ON DELETE SET NULL
+
+univdonations=> \d project
+             Table "public.project"
+  Column   |          Type          | Modifiers 
+-----------+------------------------+-----------
+ projname  | character varying(255) | not null
+ startdate | date                   | not null
+ budget    | numeric(10,2)          | not null
+Indexes:
+    "project_pkey" PRIMARY KEY, btree (projname)
+Referenced by:
+    TABLE "pledge" CONSTRAINT "pledge_projname_fkey" FOREIGN KEY (projname) REFERENCES project(projname) ON UPDATE CASCADE ON DELETE SET NULL
+
+univdonations=> \d pledge
+                                       Table "public.pledge"
+    Column     |          Type          |                         Modifiers                         
+---------------+------------------------+-----------------------------------------------------------
+ pledgeno      | integer                | not null default nextval('pledge_pledgeno_seq'::regclass)
+ datepledged   | date                   | not null
+ amountpledged | numeric(10,2)          | not null
+ numpayments   | numeric(3,0)           | 
+ donorid       | integer                | 
+ projname      | character varying(255) | 
+Indexes:
+    "pledge_pkey" PRIMARY KEY, btree (pledgeno)
+Foreign-key constraints:
+    "pledge_donorid_fkey" FOREIGN KEY (donorid) REFERENCES person(donorid) ON UPDATE CASCADE ON DELETE SET NULL
+    "pledge_projname_fkey" FOREIGN KEY (projname) REFERENCES project(projname) ON UPDATE CASCADE ON DELETE SET NULL
+Referenced by:
+    TABLE "donation" CONSTRAINT "donation_pledgeno_fkey" FOREIGN KEY (pledgeno) REFERENCES pledge(pledgeno) ON UPDATE CASCADE ON DELETE SET NULL
+Triggers:
+
+univdonations=> \d donation
+          Table "public.donation"
+    Column     |     Type      | Modifiers 
+---------------+---------------+-----------
+ creditcardno  | character(16) | 
+ datepaid      | date          | not null
+ checkno       | character(9)  | 
+ amountpaid    | numeric(10,2) | not null
+ paymentmethod | character(64) | not null
+ pledgeno      | integer       | 
+Indexes:
+    "donation_pkey" PRIMARY KEY, btree (datepaid)
+Foreign-key constraints:
+    "donation_pledgeno_fkey" FOREIGN KEY (pledgeno) REFERENCES pledge(pledgeno) ON UPDATE CASCADE ON DELETE SET NULL
+
+univdonations=> ^D\q
+wysekx16@Solaris:~$ 
+script done on December  6, 2018 01:23:56 PM UTC
